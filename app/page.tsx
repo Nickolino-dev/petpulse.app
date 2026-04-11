@@ -68,8 +68,8 @@ export default function Home() {
   // Applichiamo il filtro dinamicamente ai post
   const filteredPosts =
     filter === "tutti"
-      ? posts
-      : posts.filter((post) => post.user_id === user?.id);
+      ? posts || []
+      : posts?.filter((post) => post?.user_id === user?.id) || [];
 
   return (
     <div className="flex flex-col w-full">
@@ -113,8 +113,8 @@ export default function Home() {
           key={filter}
           className="flex flex-col animate-in fade-in duration-300"
         >
-          {filteredPosts.length > 0 ? (
-            filteredPosts.map((post) => (
+          {filteredPosts?.length > 0 ? (
+            filteredPosts?.map((post) => (
               <PetCard
                 key={post.id}
                 id={post.id}

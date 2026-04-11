@@ -22,7 +22,7 @@ export default function Header() {
               />
             ) : (
               <span className="text-xl font-bold text-[#2D4A3E]">
-                {(profile?.username || "P")[0].toUpperCase()}
+                {(profile?.username?.[0] || "P").toUpperCase()}
               </span>
             )}
           </div>

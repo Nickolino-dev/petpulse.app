@@ -134,10 +134,10 @@ export default function PetCard({
   };
 
   const visibleComments = expandedComments
-    ? comments
-    : comments.length > 3
+    ? comments || []
+    : comments?.length > 3
       ? comments.slice(-2)
-      : comments;
+      : comments || [];
 
   return (
     <div className="bg-white active:scale-[0.98] transition-all duration-200 cursor-pointer rounded-3xl overflow-hidden shadow-sm border border-gray-100 mb-6">
@@ -155,7 +155,7 @@ export default function PetCard({
                 className="w-full h-full object-cover"
               />
             ) : (
-              user[0]?.toUpperCase() || "U"
+              user?.[0]?.toUpperCase() || "U"
             )}
           </div>
           <div>
@@ -200,9 +200,9 @@ export default function PetCard({
             <p className="text-xs text-gray-400 mb-4 animate-pulse">
               Caricamento zampate...
             </p>
-          ) : comments.length > 0 ? (
+          ) : comments?.length > 0 ? (
             <div className="flex flex-col gap-2 mb-4 max-h-40 overflow-y-auto pr-1">
-              {comments.length > 3 && !expandedComments && (
+              {comments?.length > 3 && !expandedComments && (
                 <button
                   onClick={() => setExpandedComments(true)}
                   className="text-xs text-gray-400 font-medium text-left mb-1 hover:underline active:scale-95 transition-transform"

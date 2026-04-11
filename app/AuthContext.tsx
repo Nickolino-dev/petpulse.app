@@ -38,38 +38,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       return;
     }
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
-    setProfile(data || null);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      setProfile(data || null);
+    } catch (error) {
+      console.error("Errore fetchProfile:", error);
+      setProfile(null);
+    }
   };
 
   useEffect(() => {
     // Caricamento iniziale sicuro
     const initAuth = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      setSession(session);
-      setUser(session?.user ?? null);
-      await fetchProfile(session?.user ?? null);
-      hasLoadedInitially.current = true;
-      setLoading(false);
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        setSession(session);
+        setUser(session?.user ?? null);
+        await fetchProfile(session?.user ?? null);
+      } catch (error) {
+        console.error("Errore inizializzazione Auth:", error);
+      } finally {
+        hasLoadedInitially.current = true;
+        setLoading(false);
+      }
     };
     initAuth();
 
     // Ascoltatore dei cambiamenti (Login / Registrazione / Logout)
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
-        // Nessun setLoading(true) qui! Evitiamo il re-render al cambio scheda.
-        setSession(session);
-        setUser(session?.user ?? null);
-        await fetchProfile(session?.user ?? null);
-        if (!hasLoadedInitially.current) {
-          hasLoadedInitially.current = true;
-          setLoading(false);
+        try {
+          // Nessun setLoading(true) qui! Evitiamo il re-render al cambio scheda.
+          setSession(session);
+          setUser(session?.user ?? null);
+          await fetchProfile(session?.user ?? null);
+        } catch (error) {
+          console.error("Errore authListener:", error);
+        } finally {
+          if (!hasLoadedInitially.current) {
+            hasLoadedInitially.current = true;
+            setLoading(false);
+          }
         }
       },
     );

@@ -2,43 +2,60 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
+import PetCard from "../../components/PetCard";
 
-export default function Profilo() {
-  const { user } = useAuth();
+export default function UserProfile() {
+  const { refetchProfile } = useAuth();
+  const [sessionUser, setSessionUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    username: "",
-    pet_name: "",
-    bio: "",
-  });
+  const [formData, setFormData] = useState({ pet_name: "", bio: "" });
 
   useEffect(() => {
-    if (user) {
-      fetchProfile();
-    }
-  }, [user]);
+    async function fetchProfileAndPosts() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-  const fetchProfile = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user?.id)
-      .single();
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+        setSessionUser(user);
 
-    if (data) {
-      setProfile(data);
-      setFormData({
-        username: data.username || "",
-        pet_name: data.pet_name || "",
-        bio: data.bio || "",
-      });
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+
+        const { data: postsData } = await supabase
+          .from("posts")
+          .select("*, profiles(username, pet_name, avatar_url)")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+
+        if (profileData) {
+          setProfile(profileData);
+          setFormData({
+            pet_name: profileData.pet_name || "",
+            bio: profileData.bio || "",
+          });
+        }
+        setPosts(postsData || []);
+      } catch (error) {
+        console.error("Errore fetchProfileAndPosts:", error);
+      } finally {
+        setLoading(false);
+      }
     }
-    setLoading(false);
-  };
+
+    fetchProfileAndPosts();
+  }, []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,20 +64,20 @@ export default function Profilo() {
     const { error } = await supabase
       .from("profiles")
       .update({
-        username: formData.username,
         pet_name: formData.pet_name,
         bio: formData.bio,
       })
-      .eq("id", user?.id);
+      .eq("id", sessionUser?.id);
 
     setSaving(false);
 
     if (error) {
       console.error("Errore aggiornamento profilo:", error.message || error);
-      alert("Errore durante il salvataggio. Controlla i permessi RLS!");
+      alert("Errore durante il salvataggio.");
     } else {
       setProfile({ ...profile, ...formData });
       setIsEditing(false);
+      refetchProfile();
     }
   };
 
@@ -72,30 +89,24 @@ export default function Profilo() {
     );
   }
 
+  if (!profile) {
+    return (
+      <div className="text-center py-10 text-gray-500">
+        Profilo non trovato.
+      </div>
+    );
+  }
+
   if (isEditing) {
     return (
       <div className="flex flex-col items-center w-full animate-in fade-in duration-300">
         <h1 className="text-2xl font-black text-[#2D4A3E] mb-6">
-          Modifica Profilo
+          Modifica Profilo Rapida
         </h1>
         <form
           onSubmit={handleSave}
           className="w-full bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-4"
         >
-          <div>
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">
-              Username Padrone
-            </label>
-            <input
-              type="text"
-              name="username"
-              value={formData.username}
-              onChange={(e) =>
-                setFormData({ ...formData, username: e.target.value })
-              }
-              className="w-full mt-1 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm text-[#2D4A3E] focus:outline-none focus:ring-2 focus:ring-[#E67E70]"
-            />
-          </div>
           <div>
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">
               Nome del Pet
@@ -107,6 +118,7 @@ export default function Profilo() {
               onChange={(e) =>
                 setFormData({ ...formData, pet_name: e.target.value })
               }
+              required
               className="w-full mt-1 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 text-sm text-[#2D4A3E] focus:outline-none focus:ring-2 focus:ring-[#E67E70]"
             />
           </div>
@@ -144,65 +156,77 @@ export default function Profilo() {
     );
   }
 
-  const avatarLetter = profile?.username
-    ? profile.username[0].toUpperCase()
-    : "U";
-
   return (
-    <div className="flex flex-col items-center w-full animate-in fade-in slide-in-from-bottom-4 duration-300">
+    <div className="flex flex-col w-full animate-in fade-in duration-300">
       {/* Header Profilo */}
-      <div className="mt-6 flex flex-col items-center">
-        <div className="w-32 h-32 rounded-full bg-[#E67E70]/20 flex items-center justify-center text-5xl mb-4 shadow-sm border-4 border-white overflow-hidden text-[#E67E70]">
-          {profile?.avatar_url ? (
+      <div className="flex flex-col items-center mb-6 bg-white p-6 rounded-[32px] shadow-sm border border-[#2D4A3E]/5 relative">
+        <div className="w-24 h-24 rounded-full bg-[#E67E70] flex items-center justify-center text-white text-3xl font-bold overflow-hidden shadow-md mb-4 border-4 border-white">
+          {profile.avatar_url ? (
             <img
               src={profile.avatar_url}
-              alt="Avatar"
+              alt={profile.username}
               className="w-full h-full object-cover"
             />
           ) : (
-            <span className="font-black">{avatarLetter}</span>
+            (profile.pet_name?.[0] || "P").toUpperCase()
           )}
         </div>
-
-        {/* Info Bio */}
-        <h1 className="font-black text-3xl text-[#2D4A3E] tracking-tight">
-          {profile?.pet_name || "Il mio Pet"}
+        <h1 className="text-2xl font-black text-[#2D4A3E] tracking-tight">
+          {profile.pet_name || "Pet"}
         </h1>
-        <p className="text-[#2D4A3E]/60 text-sm mt-2 font-medium text-center px-4">
-          {profile?.bio ||
-            "Nessuna bio inserita. Clicca su impostazioni per aggiungerla!"}
+        <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">
+          di {profile.username || "Utente"}
         </p>
+        <p className="text-[#2D4A3E]/80 text-sm mt-3 text-center max-w-[250px]">
+          {profile.bio || "Nessuna bio inserita."}
+        </p>
+
+        <button
+          onClick={() => setIsEditing(true)}
+          className="mt-5 px-6 py-2 bg-gray-50 border border-gray-200 text-[#2D4A3E] text-xs font-bold rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
+        >
+          Modifica Profilo
+        </button>
       </div>
 
-      {/* Statistiche (Grid) */}
-      <div className="grid grid-cols-3 gap-3 w-full mt-10">
-        <div className="bg-white rounded-3xl p-4 flex flex-col items-center justify-center shadow-[0_2px_10px_rgba(0,0,0,0.02)] border border-[#2D4A3E]/5">
-          <span className="font-black text-2xl text-[#2D4A3E]">15</span>
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
-            Post
-          </span>
-        </div>
-        <div className="bg-white rounded-3xl p-4 flex flex-col items-center justify-center shadow-[0_2px_10px_rgba(0,0,0,0.02)] border border-[#2D4A3E]/5">
-          <span className="font-black text-2xl text-[#2D4A3E]">42</span>
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
-            Amici
-          </span>
-        </div>
-        <div className="bg-white rounded-3xl p-4 flex flex-col items-center justify-center shadow-[0_2px_10px_rgba(0,0,0,0.02)] border border-[#2D4A3E]/5">
-          <span className="font-black text-2xl text-[#2D4A3E]">128</span>
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
-            Zampate
-          </span>
-        </div>
+      <div className="mb-3 px-1 flex items-center justify-between">
+        <h2 className="text-sm font-black text-[#2D4A3E] uppercase tracking-wide">
+          I Miei Ululati
+        </h2>
+        <span className="text-xs font-bold text-gray-400">
+          {posts?.length || 0} post
+        </span>
       </div>
 
-      {/* Logout/Settings */}
-      <button
-        onClick={() => setIsEditing(true)}
-        className="mt-16 px-6 py-3 text-gray-400 text-xs font-bold uppercase tracking-wider rounded-2xl hover:bg-black/5 transition-colors active:scale-95"
-      >
-        ⚙️ Impostazioni
-      </button>
+      {/* Griglia Stile Instagram */}
+      {posts?.length > 0 ? (
+        <div className="grid grid-cols-3 gap-1 w-full">
+          {posts.map((post) => (
+            <div
+              key={post.id}
+              className="aspect-square bg-gray-100 relative overflow-hidden group cursor-pointer"
+            >
+              {post.image ? (
+                <img
+                  src={post.image}
+                  className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
+                  alt="Post"
+                />
+              ) : (
+                <div className="p-2 w-full h-full flex items-center justify-center text-[10px] text-[#2D4A3E] text-center bg-[#E67E70]/10 font-medium">
+                  {post.caption?.length > 40
+                    ? post.caption.substring(0, 40) + "..."
+                    : post.caption}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-center text-gray-400 text-sm py-10">
+          Nessun ululato da mostrare. 🐾
+        </p>
+      )}
     </div>
   );
 }

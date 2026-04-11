@@ -45,7 +45,7 @@ export default function AddPost() {
         .from("profiles")
         .insert({
           id: user.id,
-          username: user.email?.split("@")[0] || "Utente",
+          username: user?.email?.split("@")?.[0] || "Utente",
         })
         .select()
         .single();
