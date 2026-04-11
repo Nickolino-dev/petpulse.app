@@ -2,23 +2,29 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { usePet } from "../app/PetContext";
+import { useAuth } from "../app/AuthContext";
+import Link from "next/link";
 
 interface PetCardProps {
   id: string | number;
   user: string;
+  userId?: string;
   petName: string;
   image: string;
   caption: string;
   likes: number;
+  avatarUrl?: string;
 }
 
 export default function PetCard({
   id,
   user,
+  userId,
   petName,
   image,
   caption,
   likes,
+  avatarUrl,
 }: PetCardProps) {
   const [likesCount, setLikesCount] = useState(likes || 0);
   const [isLiked, setIsLiked] = useState(false);
@@ -28,6 +34,7 @@ export default function PetCard({
   const [loadingComments, setLoadingComments] = useState(true);
   const { activePet } = usePet();
   const commentInputRef = useRef<HTMLInputElement>(null);
+  const { user: currentUser } = useAuth();
 
   const handleLike = async () => {
     const newIsLiked = !isLiked;
@@ -104,15 +111,25 @@ export default function PetCard({
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
 
+    if (!currentUser) return;
+
     const { error } = await supabase
       .from("comments")
-      .insert([{ post_id: id, pet_name: activePet, text: newComment }]);
+      .insert([{ post_id: id, user_id: currentUser.id, text: newComment }]);
 
     if (!error) {
       setNewComment("");
       // Rimosso fetchComments() perché ci penserà il Realtime ad aggiungerlo istantaneamente alla lista!
     } else {
       console.error("Errore nell'invio del commento:", error);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Sei sicuro di voler eliminare questo ululato?")) return;
+    const { error } = await supabase.from("posts").delete().eq("id", id);
+    if (error) {
+      console.error("Errore nell'eliminazione del post:", error);
     }
   };
 
@@ -125,16 +142,37 @@ export default function PetCard({
   return (
     <div className="bg-white active:scale-[0.98] transition-all duration-200 cursor-pointer rounded-3xl overflow-hidden shadow-sm border border-gray-100 mb-6">
       {/* Header del post */}
-      <div className="p-4 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-[#E67E70] flex items-center justify-center text-white text-xs font-bold">
-          {user[0]}
-        </div>
-        <div>
-          <p className="text-[#2D4A3E] font-bold text-sm leading-none">
-            {petName}
-          </p>
-          <p className="text-gray-400 text-[10px]">Postato da {user}</p>
-        </div>
+      <div className="p-4 flex items-center justify-between gap-3">
+        <Link
+          href={userId === currentUser?.id ? `/profile` : "#"}
+          className="flex items-center gap-3 group"
+        >
+          <div className="w-8 h-8 rounded-full bg-[#E67E70] flex items-center justify-center text-white text-xs font-bold overflow-hidden">
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={user}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              user[0]?.toUpperCase() || "U"
+            )}
+          </div>
+          <div>
+            <p className="text-[#2D4A3E] font-bold text-sm leading-none group-hover:underline">
+              {petName}
+            </p>
+            <p className="text-gray-400 text-[10px]">Postato da {user}</p>
+          </div>
+        </Link>
+        {currentUser?.id === userId && (
+          <button
+            onClick={handleDelete}
+            className="text-red-400 text-xs font-bold hover:underline active:scale-95 transition-transform p-2"
+          >
+            Elimina
+          </button>
+        )}
       </div>
 
       {/* Corpo del Post (Immagine opzionale + Testo) */}
@@ -197,7 +235,7 @@ export default function PetCard({
               type="text"
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder={`Scrivi come ${activePet}...`}
+              placeholder="Aggiungi una zampata..."
               className="flex-1 bg-gray-50 border border-gray-100 rounded-full px-4 py-2 text-xs text-[#2D4A3E] focus:outline-none focus:ring-2 focus:ring-[#E67E70]"
               onKeyDown={(e) => e.key === "Enter" && handleAddComment()}
             />

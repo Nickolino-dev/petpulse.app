@@ -1,27 +1,26 @@
-"use client"; // Fondamentale perché usiamo useEffect
+"use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import PetCard from "../components/PetCard";
-import { usePet } from "./PetContext";
+import { useAuth } from "./AuthContext";
 
 export default function Home() {
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"tutti" | "mio">("tutti");
-  const { activePet } = usePet();
+  const { user, profile } = useAuth();
 
   useEffect(() => {
-    // Funzione per andare a prendere i post dal database
     async function fetchPosts() {
       const { data, error } = await supabase
         .from("posts")
-        .select("*")
+        .select("*, profiles(username, pet_name, avatar_url)")
         .order("created_at", { ascending: false })
         .limit(50); // Aggiungiamo un limite per non scaricare troppi dati e bloccare il PC
 
       if (error) {
-        console.error("Errore nel recupero post:", error);
+        console.error("Errore nel recupero post:", error.message || error);
       } else {
         setPosts(data || []);
       }
@@ -70,7 +69,7 @@ export default function Home() {
   const filteredPosts =
     filter === "tutti"
       ? posts
-      : posts.filter((post) => post.pet_name === activePet);
+      : posts.filter((post) => post.user_id === user?.id);
 
   return (
     <div className="flex flex-col w-full">
@@ -101,7 +100,7 @@ export default function Home() {
               : "bg-white text-[#2D4A3E] border border-[#2D4A3E]/10"
           }`}
         >
-          Solo {activePet}
+          Solo {profile?.pet_name || "i tuoi"}
         </button>
       </div>
 
@@ -110,19 +109,19 @@ export default function Home() {
           Fiutando i post nel database... 🐾
         </div>
       ) : (
-        /* Utilizzando key={filter + activePet} inganniamo React costringendolo a 
-           ri-renderizzare questo div e far ripartire l'animazione in e fade-in fluidamente */
         <div
-          key={filter + activePet}
-          className="flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500"
+          key={filter}
+          className="flex flex-col animate-in fade-in duration-300"
         >
           {filteredPosts.length > 0 ? (
             filteredPosts.map((post) => (
               <PetCard
                 key={post.id}
                 id={post.id}
-                user={post.user_name}
-                petName={post.pet_name}
+                user={post.profiles?.username || post.user_name || "Utente"}
+                userId={post.user_id}
+                petName={post.profiles?.pet_name || post.pet_name}
+                avatarUrl={post.profiles?.avatar_url}
                 image={post.image || ""}
                 caption={post.caption}
                 likes={post.likes || 0}
@@ -130,7 +129,9 @@ export default function Home() {
             ))
           ) : (
             <div className="text-center py-10 text-gray-400 text-sm font-medium">
-              Ancora nessun post da {activePet}... 🐾
+              {filter === "mio"
+                ? "Non hai ancora pubblicato nessun ululato. 🐾"
+                : "Nessun ululato nel branco per ora. 🐾"}
             </div>
           )}
         </div>

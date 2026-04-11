@@ -1,7 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
-import { usePet } from "../app/PetContext";
 
 export default function AddPost() {
   const [isOpen, setIsOpen] = useState(false);
@@ -10,7 +9,6 @@ export default function AddPost() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { activePet } = usePet();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -23,6 +21,44 @@ export default function AddPost() {
   const handleSubmit = async () => {
     if (!content.trim() && !file) return;
     setIsUploading(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      alert("Devi effettuare l'accesso per pubblicare un post.");
+      setIsUploading(false);
+      return;
+    }
+
+    // 0. Controllo Profilo: Verifichiamo se il profilo esiste
+    let { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile) {
+      // Se non esiste, proviamo a crearlo al volo con i dati di base dell'auth
+      const { data: newProfile, error: profileError } = await supabase
+        .from("profiles")
+        .insert({
+          id: user.id,
+          username: user.email?.split("@")[0] || "Utente",
+        })
+        .select()
+        .single();
+
+      if (profileError) {
+        alert(
+          "Devi completare il tuo profilo prima di postare! Vai nelle Impostazioni.",
+        );
+        setIsUploading(false);
+        return;
+      }
+      profile = newProfile;
+    }
 
     let imageUrl = null;
 
@@ -51,10 +87,10 @@ export default function AddPost() {
     // 3. Creazione del Post nel Database
     const { error } = await supabase.from("posts").insert([
       {
-        user_name: "Nico",
-        pet_name: activePet,
+        user_id: user.id,
+        pet_name: profile?.pet_name || "Il mio Pet",
         caption: content,
-        emoji: activePet === "Thor" ? "🐶" : "🐱",
+        emoji: "🐾",
         ...(imageUrl ? { image: imageUrl } : {}), // Aggiunge image solo se esiste
       },
     ]);
@@ -63,7 +99,13 @@ export default function AddPost() {
 
     if (error) {
       console.error("Errore durante la pubblicazione:", error);
-      alert("Errore durante la pubblicazione del post.");
+      if (error.code === "23503") {
+        alert(
+          "Devi completare il tuo profilo prima di postare! Vai nelle Impostazioni.",
+        );
+      } else {
+        alert("Errore durante la pubblicazione del post.");
+      }
     } else {
       closeModal();
       // Grazie a Supabase Realtime, il feed si aggiornerà da solo!

@@ -2,9 +2,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import AddPost from "./AddPost";
+import { useAuth } from "../app/AuthContext";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { user } = useAuth();
 
   const NavItem = ({
     href,
@@ -15,7 +17,10 @@ export default function Navbar() {
     icon: string;
     label: string;
   }) => {
-    const isActive = pathname === href;
+    // Rende attivo il tab del profilo per qualsiasi rotta /profile/*
+    const isActive = href.startsWith("/profile")
+      ? pathname?.startsWith("/profile")
+      : pathname === href;
 
     return (
       <Link
@@ -45,7 +50,7 @@ export default function Navbar() {
       </div>
 
       <NavItem href="/servizi" icon="🩺" label="SERVIZI" />
-      <NavItem href="/profilo" icon="👤" label="PROFILO" />
+      <NavItem href="/profile" icon="👤" label="PROFILO" />
     </nav>
   );
 }

@@ -4,6 +4,9 @@ import "./globals.css";
 import Navbar from "../components/Navbar";
 import Header from "../components/Header";
 import { PetProvider } from "./PetContext"; // Importiamo il trasmettitore
+import { AuthProvider } from "./AuthContext";
+import ProtectRoute from "../components/ProtectRoute";
+import OnboardingCheck from "../components/OnboardingCheck";
 
 export default function RootLayout({
   children,
@@ -13,14 +16,20 @@ export default function RootLayout({
   return (
     <html lang="it">
       <body className="antialiased bg-[#FDFBF7] min-h-screen flex flex-col">
-        <PetProvider>
-          {/* Inizia la trasmissione qui! */}
-          <Header />
-          <main className="flex-1 pt-24 pb-24 px-4 w-full max-w-md mx-auto">
-            {children}
-          </main>
-          <Navbar />
-        </PetProvider>
+        <AuthProvider>
+          <ProtectRoute>
+            <OnboardingCheck>
+              <PetProvider>
+                {/* Inizia la trasmissione qui! */}
+                <Header />
+                <main className="flex-1 pt-24 pb-24 px-4 w-full max-w-md mx-auto">
+                  {children}
+                </main>
+                <Navbar />
+              </PetProvider>
+            </OnboardingCheck>
+          </ProtectRoute>
+        </AuthProvider>
       </body>
     </html>
   );
