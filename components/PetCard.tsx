@@ -53,10 +53,41 @@ export default function PetCard({
     }
   };
 
-  // Scarica i commenti automaticamente al caricamento della card
+  // Sincronizza il contatore dei like se viene aggiornato dal Realtime (dal Feed genitore)
+  useEffect(() => {
+    setLikesCount(likes || 0);
+  }, [likes]);
+
+  // Scarica i commenti automaticamente al caricamento della card e ascolta i nuovi in Realtime
   useEffect(() => {
     fetchComments();
-  }, []);
+
+    const channel = supabase
+      .channel(`comments-channel-${id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "comments" },
+        (payload) => {
+          // Filtro lato client per assicurarci che il commento sia per questo specifico post
+          if (payload.new.post_id === id) {
+            setComments((prev) => [...prev, payload.new]);
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "comments" },
+        (payload) => {
+          // Rimuove il commento se cancellato da qualcun altro
+          setComments((prev) => prev.filter((c) => c.id !== payload.old.id));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [id]);
 
   const fetchComments = async () => {
     setLoadingComments(true);
@@ -79,7 +110,7 @@ export default function PetCard({
 
     if (!error) {
       setNewComment("");
-      fetchComments(); // Ricarica la lista per mostrare il nuovo commento
+      // Rimosso fetchComments() perché ci penserà il Realtime ad aggiungerlo istantaneamente alla lista!
     } else {
       console.error("Errore nell'invio del commento:", error);
     }

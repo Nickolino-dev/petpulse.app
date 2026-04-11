@@ -29,6 +29,41 @@ export default function Home() {
     }
 
     fetchPosts();
+
+    // Creazione del canale Realtime per ascoltare i cambiamenti sulla tabella "posts"
+    const channel = supabase
+      .channel("custom-all-channel")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "posts" },
+        (payload) => {
+          setPosts((prev) => [payload.new, ...prev]);
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "posts" },
+        (payload) => {
+          setPosts((prev) =>
+            prev.map((post) =>
+              post.id === payload.new.id ? payload.new : post,
+            ),
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "posts" },
+        (payload) => {
+          setPosts((prev) => prev.filter((post) => post.id !== payload.old.id));
+        },
+      )
+      .subscribe();
+
+    // Cleanup: smonta il canale quando il componente viene chiuso
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Applichiamo il filtro dinamicamente ai post

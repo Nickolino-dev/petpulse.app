@@ -66,7 +66,7 @@ export default function AddPost() {
       alert("Errore durante la pubblicazione del post.");
     } else {
       closeModal();
-      window.location.reload(); // Ricarica la pagina per mostrare il nuovo post nel Feed
+      // Grazie a Supabase Realtime, il feed si aggiornerà da solo!
     }
   };
 
