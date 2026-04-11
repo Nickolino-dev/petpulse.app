@@ -1,52 +1,87 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../AuthContext";
-import PetCard from "../../components/PetCard";
+import { useSearchParams } from "next/navigation";
 
-export default function UserProfile() {
-  const { refetchProfile } = useAuth();
-  const [sessionUser, setSessionUser] = useState<any>(null);
+function ProfileContent() {
+  const { user, refetchProfile } = useAuth();
+  const searchParams = useSearchParams();
+  const urlId = searchParams?.get("id");
+
+  const targetId = urlId || user?.id;
+  const isOwnProfile = user?.id === targetId;
+
   const [profile, setProfile] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({ pet_name: "", bio: "" });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Stati per Follower
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
 
   useEffect(() => {
+    if (!user || !targetId) return;
+
     async function fetchProfileAndPosts() {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        if (!user) {
-          setLoading(false);
-          return;
-        }
-        setSessionUser(user);
-
+        // Fetch Profilo
         const { data: profileData } = await supabase
           .from("profiles")
           .select("*")
-          .eq("id", user.id)
+          .eq("id", targetId)
           .single();
 
+        // Fetch Post
         const { data: postsData } = await supabase
           .from("posts")
           .select("*, profiles(username, pet_name, avatar_url)")
-          .eq("user_id", user.id)
+          .eq("user_id", targetId)
           .order("created_at", { ascending: false });
+
+        // Fetch Followers (chi segue questo profilo)
+        const { count: followers } = await supabase
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("following_id", targetId);
+
+        // Fetch Following (chi è seguito da questo profilo)
+        const { count: following } = await supabase
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("follower_id", targetId);
 
         if (profileData) {
           setProfile(profileData);
-          setFormData({
-            pet_name: profileData.pet_name || "",
-            bio: profileData.bio || "",
-          });
+          if (isOwnProfile) {
+            setFormData({
+              pet_name: profileData.pet_name || "",
+              bio: profileData.bio || "",
+            });
+          }
         }
+
         setPosts(postsData || []);
+        setFollowersCount(followers || 0);
+        setFollowingCount(following || 0);
+
+        // Controlla se l'utente loggato segue il profilo corrente
+        if (!isOwnProfile) {
+          const { data: followData } = await supabase
+            .from("follows")
+            .select("id")
+            .eq("follower_id", user.id)
+            .eq("following_id", targetId)
+            .single();
+
+          setIsFollowing(!!followData);
+        }
       } catch (error) {
         console.error("Errore fetchProfileAndPosts:", error);
       } finally {
@@ -55,10 +90,53 @@ export default function UserProfile() {
     }
 
     fetchProfileAndPosts();
-  }, []);
+  }, [user, targetId, isOwnProfile]);
+
+  // Funzione dedicata all'Upload immediato dell'Avatar
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isOwnProfile) return;
+    if (!e.target.files || e.target.files.length === 0) return;
+    if (!user) {
+      alert("Sessione non valida, effettua di nuovo l'accesso.");
+      return;
+    }
+    const selectedFile = e.target.files[0];
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      alert("L'immagine è troppo grande! Dimensione massima 5MB.");
+      return;
+    }
+
+    setSaving(true);
+    const fileExt = selectedFile.name.split(".").pop() || "png";
+    const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(fileName, selectedFile, { upsert: true });
+
+    if (uploadError) {
+      console.error("Errore upload avatar:", uploadError);
+      alert("Errore nel caricamento dell'immagine.");
+      setSaving(false);
+      return;
+    }
+
+    const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+    const newAvatarUrl = `${data.publicUrl}?t=${Date.now()}`;
+
+    await supabase
+      .from("profiles")
+      .update({ avatar_url: newAvatarUrl })
+      .eq("id", user.id);
+
+    setProfile((prev: any) => ({ ...prev, avatar_url: newAvatarUrl }));
+    refetchProfile();
+    setSaving(false);
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOwnProfile) return;
     setSaving(true);
 
     const { error } = await supabase
@@ -67,7 +145,7 @@ export default function UserProfile() {
         pet_name: formData.pet_name,
         bio: formData.bio,
       })
-      .eq("id", sessionUser?.id);
+      .eq("id", user?.id);
 
     setSaving(false);
 
@@ -78,6 +156,37 @@ export default function UserProfile() {
       setProfile({ ...profile, ...formData });
       setIsEditing(false);
       refetchProfile();
+    }
+  };
+
+  const handleToggleFollow = async () => {
+    if (!user || isOwnProfile) return;
+    setFollowLoading(true);
+
+    try {
+      if (isFollowing) {
+        // Smetti di seguire
+        await supabase
+          .from("follows")
+          .delete()
+          .eq("follower_id", user.id)
+          .eq("following_id", targetId);
+
+        setIsFollowing(false);
+        setFollowersCount((prev) => Math.max(0, prev - 1));
+      } else {
+        // Inizia a seguire
+        await supabase
+          .from("follows")
+          .insert({ follower_id: user.id, following_id: targetId });
+
+        setIsFollowing(true);
+        setFollowersCount((prev) => prev + 1);
+      }
+    } catch (error) {
+      console.error("Errore durante l'azione di Follow:", error);
+    } finally {
+      setFollowLoading(false);
     }
   };
 
@@ -97,7 +206,7 @@ export default function UserProfile() {
     );
   }
 
-  if (isEditing) {
+  if (isEditing && isOwnProfile) {
     return (
       <div className="flex flex-col items-center w-full animate-in fade-in duration-300">
         <h1 className="text-2xl font-black text-[#2D4A3E] mb-6">
@@ -107,6 +216,33 @@ export default function UserProfile() {
           onSubmit={handleSave}
           className="w-full bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-4"
         >
+          <div className="flex flex-col items-center mb-2">
+            <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center text-4xl overflow-hidden relative border-2 border-[#E67E70]">
+              {profile?.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt="Avatar"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                "📷"
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-2 text-xs font-bold text-[#E67E70] hover:underline"
+            >
+              Cambia Foto
+            </button>
+            <input
+              type="file"
+              accept="image/*"
+              ref={fileInputRef}
+              onChange={handleUpload}
+              className="hidden"
+            />
+          </div>
           <div>
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">
               Nome del Pet
@@ -148,7 +284,33 @@ export default function UserProfile() {
               disabled={saving}
               className="flex-1 bg-[#E67E70] text-white py-3 rounded-2xl font-bold text-sm shadow-lg shadow-[#E67E70]/30 active:scale-95 transition-all disabled:opacity-50"
             >
-              {saving ? "Salvataggio..." : "Salva"}
+              {saving ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg
+                    className="animate-spin h-4 w-4 text-white"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v8H4z"
+                    ></path>
+                  </svg>
+                  Salvataggio...
+                </span>
+              ) : (
+                "Salva"
+              )}
             </button>
           </div>
         </form>
@@ -181,21 +343,64 @@ export default function UserProfile() {
           {profile.bio || "Nessuna bio inserita."}
         </p>
 
-        <button
-          onClick={() => setIsEditing(true)}
-          className="mt-5 px-6 py-2 bg-gray-50 border border-gray-200 text-[#2D4A3E] text-xs font-bold rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
-        >
-          Modifica Profilo
-        </button>
+        {/* Statistiche dei Seguiti/Follower */}
+        <div className="flex justify-center gap-8 mt-6 w-full px-4 border-t border-gray-50 pt-5">
+          <div className="flex flex-col items-center">
+            <span className="font-black text-lg text-[#2D4A3E]">
+              {posts?.length || 0}
+            </span>
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+              Post
+            </span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="font-black text-lg text-[#2D4A3E]">
+              {followersCount}
+            </span>
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+              Follower
+            </span>
+          </div>
+          <div className="flex flex-col items-center">
+            <span className="font-black text-lg text-[#2D4A3E]">
+              {followingCount}
+            </span>
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+              Seguiti
+            </span>
+          </div>
+        </div>
+
+        {isOwnProfile ? (
+          <button
+            onClick={() => setIsEditing(true)}
+            className="mt-6 px-6 py-2 bg-gray-50 border border-gray-200 text-[#2D4A3E] text-xs font-bold rounded-xl hover:bg-gray-100 active:scale-95 transition-all"
+          >
+            Modifica Profilo
+          </button>
+        ) : (
+          <button
+            onClick={handleToggleFollow}
+            disabled={followLoading}
+            className={`mt-6 px-8 py-2 text-xs font-bold rounded-xl active:scale-95 transition-all shadow-sm disabled:opacity-50 ${
+              isFollowing
+                ? "bg-gray-100 text-[#2D4A3E] border border-gray-200"
+                : "bg-[#E67E70] text-white shadow-[#E67E70]/30"
+            }`}
+          >
+            {followLoading
+              ? "Attendere..."
+              : isFollowing
+                ? "Segui già"
+                : "Segui"}
+          </button>
+        )}
       </div>
 
       <div className="mb-3 px-1 flex items-center justify-between">
         <h2 className="text-sm font-black text-[#2D4A3E] uppercase tracking-wide">
-          I Miei Ululati
+          {isOwnProfile ? "I Miei Ululati" : `Ululati di ${profile.pet_name}`}
         </h2>
-        <span className="text-xs font-bold text-gray-400">
-          {posts?.length || 0} post
-        </span>
       </div>
 
       {/* Griglia Stile Instagram */}
@@ -206,9 +411,9 @@ export default function UserProfile() {
               key={post.id}
               className="aspect-square bg-gray-100 relative overflow-hidden group cursor-pointer"
             >
-              {post.image ? (
+              {post?.image ? (
                 <img
-                  src={post.image}
+                  src={post?.image}
                   className="w-full h-full object-cover group-hover:opacity-90 transition-opacity"
                   alt="Post"
                 />
@@ -228,5 +433,19 @@ export default function UserProfile() {
         </p>
       )}
     </div>
+  );
+}
+
+export default function UserProfile() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center py-20 text-[#2D4A3E] font-bold animate-pulse">
+          Fiutando il profilo... 🐾
+        </div>
+      }
+    >
+      <ProfileContent />
+    </Suspense>
   );
 }

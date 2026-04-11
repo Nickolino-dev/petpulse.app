@@ -10,7 +10,7 @@ interface PetCardProps {
   user: string;
   userId?: string;
   petName: string;
-  image: string;
+  imageUrl?: string;
   caption: string;
   likes: number;
   avatarUrl?: string;
@@ -21,7 +21,7 @@ export default function PetCard({
   user,
   userId,
   petName,
-  image,
+  imageUrl,
   caption,
   likes,
   avatarUrl,
@@ -35,6 +35,7 @@ export default function PetCard({
   const { activePet } = usePet();
   const commentInputRef = useRef<HTMLInputElement>(null);
   const { user: currentUser } = useAuth();
+  const [isDeleted, setIsDeleted] = useState(false);
 
   const handleLike = async () => {
     const newIsLiked = !isLiked;
@@ -57,6 +58,14 @@ export default function PetCard({
       // Se fallisce, annulliamo l'ottimismo
       setLikesCount(likesCount);
       setIsLiked(isLiked);
+    } else if (newIsLiked && userId && userId !== currentUser?.id) {
+      // Se il like è andato a buon fine e non è un auto-like, invia la notifica
+      await supabase.from("notifications").insert({
+        user_id: userId, // proprietario del post
+        sender_id: currentUser?.id, // chi ha messo like
+        type: "like",
+        post_id: Number(id), // Convertito esplicitamente in intero (BIGINT)
+      });
     }
   };
 
@@ -119,6 +128,15 @@ export default function PetCard({
 
     if (!error) {
       setNewComment("");
+      // Se il commento è andato a buon fine e non è un auto-commento, invia la notifica
+      if (userId && userId !== currentUser.id) {
+        await supabase.from("notifications").insert({
+          user_id: userId,
+          sender_id: currentUser.id,
+          type: "comment",
+          post_id: Number(id),
+        });
+      }
       // Rimosso fetchComments() perché ci penserà il Realtime ad aggiungerlo istantaneamente alla lista!
     } else {
       console.error("Errore nell'invio del commento:", error);
@@ -127,11 +145,36 @@ export default function PetCard({
 
   const handleDelete = async () => {
     if (!confirm("Sei sicuro di voler eliminare questo ululato?")) return;
+
+    // 1. Feedback UI Istantaneo: nascondiamo subito la card
+    setIsDeleted(true);
+
+    // 2. Eliminazione Immagine (se presente)
+    if (imageUrl && imageUrl.trim() !== "") {
+      const pathMatches = imageUrl.match(/posts_images\/(.+)$/);
+      if (pathMatches && pathMatches[1]) {
+        const filePath = pathMatches[1].split("?")[0]; // Rimuoviamo eventuali parametri extra dall'URL
+        const { error: storageError } = await supabase.storage
+          .from("posts_images")
+          .remove([filePath]);
+        if (storageError) {
+          console.error(
+            "Errore nell'eliminazione dell'immagine:",
+            storageError,
+          );
+        }
+      }
+    }
+
+    // 3. Eliminazione del Post
     const { error } = await supabase.from("posts").delete().eq("id", id);
     if (error) {
       console.error("Errore nell'eliminazione del post:", error);
+      setIsDeleted(false); // In caso di errore, mostriamo di nuovo il post
     }
   };
+
+  if (isDeleted) return null;
 
   const visibleComments = expandedComments
     ? comments || []
@@ -144,7 +187,9 @@ export default function PetCard({
       {/* Header del post */}
       <div className="p-4 flex items-center justify-between gap-3">
         <Link
-          href={userId === currentUser?.id ? `/profile` : "#"}
+          href={
+            userId === currentUser?.id ? `/profile` : `/profile?id=${userId}`
+          }
           className="flex items-center gap-3 group"
         >
           <div className="w-8 h-8 rounded-full bg-[#E67E70] flex items-center justify-center text-white text-xs font-bold overflow-hidden">
@@ -168,26 +213,27 @@ export default function PetCard({
         {currentUser?.id === userId && (
           <button
             onClick={handleDelete}
-            className="text-red-400 text-xs font-bold hover:underline active:scale-95 transition-transform p-2"
+            className="text-red-400 text-lg hover:scale-110 active:scale-95 transition-transform p-2"
+            title="Elimina ululato"
           >
-            Elimina
+            🗑️
           </button>
         )}
       </div>
 
       {/* Corpo del Post (Immagine opzionale + Testo) */}
       <div className="px-4 pb-4">
-        {image && image.trim() !== "" && (
+        {imageUrl && imageUrl.trim() !== "" && (
           <img
-            src={image}
+            src={imageUrl}
             alt={`Post di ${petName}`}
-            className="w-full max-h-[400px] object-contain bg-gray-100 rounded-2xl mb-4"
+            className="w-full max-h-[400px] object-contain bg-gray-100 rounded-xl mb-4"
           />
         )}
 
         {/* Il testo si ingrandisce se l'immagine non è presente */}
         <p
-          className={`text-[#2D4A3E] mb-4 ${image && image.trim() !== "" ? "text-sm" : "text-base leading-relaxed"}`}
+          className={`text-[#2D4A3E] mb-4 ${imageUrl && imageUrl.trim() !== "" ? "text-sm" : "text-base leading-relaxed"}`}
         >
           <span className="font-bold mr-2">{petName}</span>
           {caption}

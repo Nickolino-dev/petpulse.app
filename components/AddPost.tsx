@@ -13,6 +13,10 @@ export default function AddPost() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFile = e.target.files[0];
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        alert("Il file è troppo grande! Dimensione massima consentita: 5MB.");
+        return;
+      }
       setFile(selectedFile);
       setPreviewUrl(URL.createObjectURL(selectedFile));
     }
@@ -64,21 +68,24 @@ export default function AddPost() {
 
     // 1. Logica di Upload Immagine (se selezionata)
     if (file) {
-      const fileName = `${Date.now()}-${file.name}`;
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
-        .from("pet-photos")
+        .from("posts_images")
         .upload(fileName, file);
 
       if (uploadError) {
         console.error("Errore durante l'upload dell'immagine:", uploadError);
-        alert("Impossibile caricare l'immagine.");
+        alert(
+          "Impossibile caricare l'immagine. Potrebbe essere troppo grande o il formato non è supportato.",
+        );
         setIsUploading(false);
         return;
       }
 
       // 2. Recupero l'URL Pubblico
       const { data } = supabase.storage
-        .from("pet-photos")
+        .from("posts_images")
         .getPublicUrl(fileName);
 
       imageUrl = data.publicUrl;
@@ -91,20 +98,20 @@ export default function AddPost() {
         pet_name: profile?.pet_name || "Il mio Pet",
         caption: content,
         emoji: "🐾",
-        ...(imageUrl ? { image: imageUrl } : {}), // Aggiunge image solo se esiste
+        ...(imageUrl ? { image: imageUrl } : {}),
       },
     ]);
 
     setIsUploading(false);
 
     if (error) {
-      console.error("Errore durante la pubblicazione:", error);
+      console.error("Errore esatto del database:", error);
       if (error.code === "23503") {
         alert(
           "Devi completare il tuo profilo prima di postare! Vai nelle Impostazioni.",
         );
       } else {
-        alert("Errore durante la pubblicazione del post.");
+        alert(`Errore durante la pubblicazione del post: ${error.message}`);
       }
     } else {
       closeModal();
@@ -141,21 +148,25 @@ export default function AddPost() {
           ></div>
 
           {/* Box della Modale */}
-          <div className="relative bg-white w-full max-w-sm rounded-[32px] p-8 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="bg-[#FDFBF7] p-4 rounded-full mb-4">
-                <span className="text-3xl">📝</span>
-              </div>
-              <h2 className="text-[#2D4A3E] font-black text-xl">
+          <div className="relative bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200 flex flex-col gap-3">
+            {/* Header Modale */}
+            <div className="flex items-center justify-between pb-2 border-b border-gray-50">
+              <button
+                onClick={closeModal}
+                disabled={isUploading}
+                className="text-gray-400 hover:text-gray-600 font-semibold text-sm transition-colors disabled:opacity-50"
+              >
+                Annulla
+              </button>
+              <h2 className="text-[#2D4A3E] font-black text-lg">
                 Nuovo Ululato
               </h2>
-              <p className="text-gray-400 text-xs">
-                Condividi un momento speciale
-              </p>
+              <div className="w-14"></div>{" "}
+              {/* Spaziatore per centrare il titolo */}
             </div>
 
             <textarea
-              className="w-full h-32 bg-[#FDFBF7] border-none rounded-2xl p-4 text-sm text-[#2D4A3E] placeholder:text-gray-300 focus:ring-2 focus:ring-[#E67E70] resize-none disabled:opacity-50"
+              className="w-full h-32 bg-transparent border-none p-2 text-lg text-[#2D4A3E] placeholder:text-gray-300 focus:ring-0 focus:outline-none resize-none disabled:opacity-50"
               placeholder="Cosa sta combinando il tuo amico oggi?"
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -164,7 +175,7 @@ export default function AddPost() {
 
             {/* Anteprima Immagine */}
             {previewUrl && (
-              <div className="relative mt-3 w-full h-32 rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
+              <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-gray-100 shadow-sm animate-in fade-in zoom-in-95 duration-300">
                 <img
                   src={previewUrl}
                   alt="Anteprima"
@@ -176,28 +187,13 @@ export default function AddPost() {
                     setFile(null);
                     setPreviewUrl(null);
                   }}
-                  className="absolute top-2 right-2 bg-black/50 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center active:scale-90 transition-transform"
+                  className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-xs rounded-full w-8 h-8 flex items-center justify-center hover:bg-black/80 active:scale-90 transition-all"
                   disabled={isUploading}
                 >
                   ✕
                 </button>
               </div>
             )}
-
-            {/* Pulsante Fotocamera e Input Nascosto */}
-            <div className="flex items-center justify-between mt-4 px-2">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className="text-2xl hover:scale-110 active:scale-95 transition-transform disabled:opacity-50"
-              >
-                📷
-              </button>
-              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                Aggiungi Foto
-              </span>
-            </div>
 
             <input
               type="file"
@@ -208,20 +204,68 @@ export default function AddPost() {
               disabled={isUploading}
             />
 
-            <div className="flex gap-3 mt-6">
+            {/* Action Bar (Icone e Tasto Pubblica) */}
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center gap-4 text-gray-400 text-xl px-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  className="hover:text-[#E67E70] transition-colors active:scale-95 disabled:opacity-50"
+                  title="Aggiungi Foto"
+                >
+                  📷
+                </button>
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  className="hover:text-[#E67E70] transition-colors active:scale-95 disabled:opacity-50"
+                  title="Aggiungi Luogo"
+                >
+                  📍
+                </button>
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  className="hover:text-[#E67E70] transition-colors active:scale-95 disabled:opacity-50"
+                  title="Aggiungi Emoji"
+                >
+                  😊
+                </button>
+              </div>
+
               <button
-                onClick={closeModal}
-                disabled={isUploading}
-                className="flex-1 py-3 text-[#2D4A3E] font-bold text-sm hover:bg-gray-50 rounded-2xl transition-colors disabled:opacity-50"
-              >
-                Annulla
-              </button>
-              <button
-                className="flex-1 bg-[#2D4A3E] text-white py-3 rounded-2xl font-bold text-sm shadow-lg shadow-[#2D4A3E]/20 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
+                className="bg-[#E67E70] hover:bg-[#d66e60] text-white px-6 py-2.5 rounded-full font-bold text-sm shadow-md shadow-[#E67E70]/30 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
                 onClick={handleSubmit}
                 disabled={isUploading || (!content.trim() && !file)}
               >
-                {isUploading ? "Invio..." : "Pubblica"}
+                {isUploading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg
+                      className="animate-spin h-4 w-4 text-white"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8v8H4z"
+                      ></path>
+                    </svg>
+                    Invio...
+                  </span>
+                ) : (
+                  "Pubblica"
+                )}
               </button>
             </div>
           </div>
