@@ -123,7 +123,7 @@ export default function Navbar() {
   return (
     <nav className="fixed bottom-0 left-0 w-full h-20 bg-[#FDFBF7] border-t border-[#2D4A3E]/10 flex justify-around items-center px-2 z-50 shadow-[0_-2px_15px_rgba(0,0,0,0.05)]">
       <NavItem href="/" icon="🏠" label="HOME" />
-      <NavItem href="/mappe" icon="📍" label="MAPPE" />
+      <NavItem href="/chat" icon="💬" label="CHAT" />
 
       <div className="relative -mt-8">
         <AddPost />
