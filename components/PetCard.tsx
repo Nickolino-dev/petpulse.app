@@ -38,6 +38,11 @@ export default function PetCard({
   const [isDeleted, setIsDeleted] = useState(false);
 
   const handleLike = async () => {
+    if (!currentUser) return;
+
+    const previousIsLiked = isLiked;
+    const previousLikesCount = likesCount;
+
     const newIsLiked = !isLiked;
     const newLikesCount = isLiked
       ? Math.max(0, likesCount - 1)
@@ -47,32 +52,70 @@ export default function PetCard({
     setLikesCount(newLikesCount);
     setIsLiked(newIsLiked);
 
-    // 2. Aggiorna il database
-    const { error } = await supabase
-      .from("posts")
-      .update({ likes: newLikesCount })
-      .eq("id", id);
+    // 2. Aggiorna la tabella relazionale "likes"
+    if (previousIsLiked) {
+      // Era già likato: l'utente sta rimuovendo il like
+      const { error } = await supabase
+        .from("likes")
+        .delete()
+        .eq("post_id", id)
+        .eq("user_id", currentUser.id);
 
-    if (error) {
-      console.error("Errore nell'invio dell'ululato:", error);
-      // Se fallisce, annulliamo l'ottimismo
-      setLikesCount(likesCount);
-      setIsLiked(isLiked);
-    } else if (newIsLiked && userId && userId !== currentUser?.id) {
-      // Se il like è andato a buon fine e non è un auto-like, invia la notifica
-      await supabase.from("notifications").insert({
-        user_id: userId, // proprietario del post
-        sender_id: currentUser?.id, // chi ha messo like
-        type: "like",
-        post_id: Number(id), // Convertito esplicitamente in intero (BIGINT)
-      });
+      if (error) {
+        console.error("Errore nella rimozione del like:", error);
+        setLikesCount(previousLikesCount);
+        setIsLiked(previousIsLiked);
+      }
+    } else {
+      // Non era likato: l'utente sta aggiungendo il like
+      const { error } = await supabase
+        .from("likes")
+        .insert({ post_id: Number(id), user_id: currentUser.id });
+
+      if (error) {
+        // Se l'errore è 23505 (Unique violation), il like era già presente nel DB (clic multipli veloci)
+        if (error.code === "23505") {
+          console.log("Il like era già stato registrato nel database.");
+        } else {
+          console.error("Errore nell'inserimento del like:", error);
+          setLikesCount(previousLikesCount);
+          setIsLiked(previousIsLiked);
+        }
+      }
     }
+    // Le notifiche vengono generate in automatico dal Trigger Supabase,
+    // quindi non serve più fare l'insert manuale qui!
   };
 
-  // Sincronizza il contatore dei like se viene aggiornato dal Realtime (dal Feed genitore)
   useEffect(() => {
-    setLikesCount(likes || 0);
-  }, [likes]);
+    const fetchLikesData = async () => {
+      // 1. Conta il totale dei like effettivi dal database
+      const { count, error: countError } = await supabase
+        .from("likes")
+        .select("*", { count: "exact", head: true })
+        .eq("post_id", id);
+
+      if (!countError && count !== null) {
+        setLikesCount(count);
+      }
+
+      // 2. Controlla se l'utente corrente ha messo like
+      if (currentUser) {
+        const { data, error: userLikeError } = await supabase
+          .from("likes")
+          .select("id")
+          .eq("post_id", id)
+          .eq("user_id", currentUser.id)
+          .maybeSingle(); // maybeSingle non lancia errore se non trova righe
+
+        if (data) {
+          setIsLiked(true);
+        }
+      }
+    };
+
+    fetchLikesData();
+  }, [id, currentUser]);
 
   // Scarica i commenti automaticamente al caricamento della card e ascolta i nuovi in Realtime
   useEffect(() => {
