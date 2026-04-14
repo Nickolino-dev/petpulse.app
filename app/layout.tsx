@@ -1,12 +1,16 @@
 "use client";
 
 import "./globals.css";
-import Navbar from "../components/Navbar";
-import Header from "../components/Header";
-import { PetProvider } from "./PetContext";
+import dynamic from "next/dynamic"; // Importiamo il caricamento dinamico
 import { AuthProvider } from "./AuthContext";
-// Rimosso ProtectRoute perché OnboardingCheck è già il nostro guardiano
-import OnboardingCheck from "../components/OnboardingCheck";
+import { PetProvider } from "./PetContext";
+
+// Carichiamo Header, Navbar e OnboardingCheck SOLO sul client
+const Header = dynamic(() => import("../components/Header"), { ssr: false });
+const Navbar = dynamic(() => import("../components/Navbar"), { ssr: false });
+const OnboardingCheck = dynamic(() => import("../components/OnboardingCheck"), {
+  ssr: false,
+});
 
 export default function RootLayout({
   children,
@@ -17,7 +21,6 @@ export default function RootLayout({
     <html lang="it">
       <body className="antialiased bg-[#FDFBF7] min-h-screen flex flex-col">
         <AuthProvider>
-          {/* OnboardingCheck ora gestisce da solo la sicurezza e i redirect */}
           <OnboardingCheck>
             <PetProvider>
               <Header />
