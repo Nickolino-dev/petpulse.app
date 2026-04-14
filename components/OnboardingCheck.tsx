@@ -10,40 +10,34 @@ export default function OnboardingCheck({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth(); // Leggiamo solo l'Auth grezzo
+  const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-
-  // Stato Iniziale di blocco (Protezione Rendering)
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const checkAccess = async () => {
-      // DEBUG: Vediamo cosa succede all'inizio del controllo
-      console.log("🔍 DEBUG CHECK:", {
-        loading,
-        hasUser: !!user,
-        currentPath: pathname,
-      });
-
-      // Effetto di Controllo: non facciamo nulla finché l'utente non è certo
+      // 1. Se stiamo ancora caricando il Context, non fare nulla
       if (loading) return;
 
+      // 2. Se non c'è l'utente dopo che il caricamento è finito,
+      // forse sta ancora arrivando la sessione. Aspettiamo un attimo.
       if (!user) {
-        console.log("⚠️ Nessun utente trovato, stop al controllo.");
+        console.log("⏳ Onboarding: Aspettando l'utente...");
         return;
       }
 
-      // Fetch Profilo Silenzioso e Assoluto (aspetta Supabase)
+      console.log("🔍 Onboarding: Controllo accesso per", user.email);
+
       const { data: profile, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single();
 
-      // DEBUG: Questo è il log fondamentale per stasera
-      console.log("📄 RISULTATO DB PROFILO:", profile);
-      if (error) console.error("❌ ERRORE SUPABASE:", error);
+      if (error && error.code !== "PGRST116") {
+        console.error("❌ Errore Fetch:", error);
+      }
 
       const isProfileIncomplete =
         !profile?.username ||
@@ -53,18 +47,12 @@ export default function OnboardingCheck({
 
       const isOnboardingPage = pathname === "/onboarding";
 
-      console.log("🤔 STATUS:", { isProfileIncomplete, isOnboardingPage });
-
-      // Redirect Sicuro: sostituiamo la rotta e NON sblocchiamo isLoading
       if (isProfileIncomplete && !isOnboardingPage) {
-        console.log("➡️ Redirect verso ONBOARDING");
         router.push("/onboarding");
       } else if (!isProfileIncomplete && isOnboardingPage) {
-        console.log("➡️ Profilo completo, redirect verso HOME");
         router.push("/");
       } else {
-        // Profilo OK e pagina corretta: sblocca Navbar, Header e Feed!
-        console.log("✅ ACCESSO GARANTITO: Sblocco UI");
+        console.log("✅ ACCESSO GARANTITO");
         setIsLoading(false);
       }
     };
@@ -72,17 +60,15 @@ export default function OnboardingCheck({
     checkAccess();
   }, [user, loading, pathname, router]);
 
-  // Protezione Rendering (non restituisce i "children" finché non siamo sicuri)
-  if (isLoading) {
-    // Un log che si ripete finché siamo bloccati
-    console.log("⏳ UI ancora bloccata dallo spinner...");
+  // Se siamo ancora in caricamento O se non c'è ancora l'utente (mentre la sessione arriva)
+  if (isLoading || (loading && !user)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7]">
-        <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse shadow-sm">
+        <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse">
           🐾
         </div>
-        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse tracking-widest uppercase">
-          Verificando la cuccia...
+        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse uppercase tracking-widest">
+          Annusando le tracce...
         </div>
       </div>
     );
