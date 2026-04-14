@@ -17,32 +17,28 @@ export default function OnboardingCheck({
 
   useEffect(() => {
     const checkAccess = async () => {
-      // 1. Aspettiamo che l'AuthContext finisca di capire chi sei
+      // 1. Aspettiamo che l'AuthContext capisca chi siamo
       if (loading) return;
 
       // 2. SE NON C'È L'UTENTE
       if (!user) {
-        // Se sei già sulla pagina di login o registrazione, ti lascio vedere la pagina
-        if (pathname === "/login" || pathname === "/register") {
+        // Se siamo già nella pagina di autenticazione, sblocchiamo lo spinner e stop
+        if (pathname === "/auth") {
           setIsLoading(false);
           return;
         }
 
-        // SE NON SEI LOGGATO e provi a entrare nella Home, ti sbatto al Login
-        console.log(
-          "🚫 Accesso negato: Utente non loggato. Redirect al login...",
-        );
-        router.push("/login"); // Assicurati di avere questa rotta!
+        // Se proviamo ad andare altrove senza essere loggati, via verso /auth
+        console.log("🚫 Utente non loggato, redirect a /auth");
+        router.push("/auth");
         return;
       }
 
-      // 3. SE C'È L'UTENTE, controlliamo il profilo
-      console.log("✅ Utente rilevato:", user.id);
-
+      // 3. SE C'È L'UTENTE, controlliamo se ha finito l'onboarding
       try {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("*")
+          .select("username, pet_name")
           .eq("id", user.id)
           .single();
 
@@ -54,16 +50,19 @@ export default function OnboardingCheck({
         const isOnboardingPage = pathname === "/onboarding";
 
         if (isProfileIncomplete && !isOnboardingPage) {
-          console.log("⚠️ Profilo incompleto, vai all'onboarding");
           router.push("/onboarding");
-        } else if (!isProfileIncomplete && isOnboardingPage) {
+        } else if (
+          !isProfileIncomplete &&
+          (isOnboardingPage || pathname === "/auth")
+        ) {
+          // Se il profilo è ok ma siamo su pagine di servizio, andiamo in Home
           router.push("/");
         } else {
-          // Tutto ok, entra pure
+          // Tutto in regola, via lo spinner
           setIsLoading(false);
         }
       } catch (err) {
-        console.error("Errore nel check:", err);
+        console.error("Errore check:", err);
         setIsLoading(false);
       }
     };
@@ -77,8 +76,8 @@ export default function OnboardingCheck({
         <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse">
           🐾
         </div>
-        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse uppercase tracking-widest">
-          Annusando le tracce...
+        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse tracking-widest uppercase">
+          Verifica in corso...
         </div>
       </div>
     );
