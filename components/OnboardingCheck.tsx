@@ -13,9 +13,7 @@ export default function OnboardingCheck({
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [status, setStatus] = useState<
-    "checking" | "authorized" | "redirecting"
-  >("checking");
+  const [status, setStatus] = useState<"checking" | "authorized">("checking");
 
   useEffect(() => {
     // 1. Se l'AuthContext sta ancora caricando, non muovere un muscolo
@@ -25,7 +23,6 @@ export default function OnboardingCheck({
       // 2. Se non c'è l'utente dopo il caricamento
       if (!user) {
         if (pathname !== "/auth") {
-          setStatus("redirecting");
           router.push("/auth");
         } else {
           setStatus("authorized");
@@ -35,11 +32,16 @@ export default function OnboardingCheck({
 
       // 3. Se c'è l'utente, verifichiamo il profilo nel DB
       try {
-        const { data: profile } = await supabase
+        const { data: profile, error } = await supabase
           .from("profiles")
           .select("username, pet_name")
           .eq("id", user.id)
           .single();
+
+        // .single() non entra nel blocco catch se fallisce, ma restituisce l'oggetto error
+        if (error && error.code !== "PGRST116") {
+          console.error("Errore fetch profilo:", error);
+        }
 
         const isProfileIncomplete =
           !profile?.username ||
@@ -47,13 +49,11 @@ export default function OnboardingCheck({
           profile?.pet_name === "Il mio Pet";
 
         if (isProfileIncomplete && pathname !== "/onboarding") {
-          setStatus("redirecting");
           router.push("/onboarding");
         } else if (
           !isProfileIncomplete &&
           (pathname === "/onboarding" || pathname === "/auth")
         ) {
-          setStatus("redirecting");
           router.push("/");
         } else {
           // TUTTO OK: Sblocca l'interfaccia
@@ -69,7 +69,7 @@ export default function OnboardingCheck({
   }, [user, loading, pathname, router]);
 
   // Se siamo in stato "checking" o l'auth sta ancora caricando, mostriamo lo spinner
-  if (loading || status === "checking" || status === "redirecting") {
+  if (loading || status === "checking") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7]">
         <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse">
