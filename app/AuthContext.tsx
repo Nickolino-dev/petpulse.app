@@ -33,8 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const hasLoadedInitially = useRef(false);
 
-  const fetchProfile = async (user: User | null) => {
-    if (!user) {
+  const fetchProfile = async (currentUser: User | null) => {
+    if (!currentUser) {
       setProfile(null);
       return;
     }
@@ -42,8 +42,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
-        .eq("id", user.id)
+        .eq("id", currentUser.id)
         .single();
+
+      if (error) throw error;
       setProfile(data || null);
     } catch (error) {
       console.error("Errore fetchProfile:", error);
@@ -52,40 +54,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Caricamento iniziale sicuro
     const initAuth = async () => {
       try {
+        // 1. Otteniamo la sessione subito
         const {
           data: { session },
         } = await supabase.auth.getSession();
+
         setSession(session);
-        setUser(session?.user ?? null);
-        await fetchProfile(session?.user ?? null);
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+
+        // 2. Se c'è un utente, iniziamo a caricare il profilo MA non blocchiamo l'app
+        if (currentUser) {
+          fetchProfile(currentUser);
+        }
       } catch (error) {
         console.error("Errore inizializzazione Auth:", error);
       } finally {
+        // 3. Sblocchiamo SEMPRE il loading qui, per permettere all'app di partire
+        console.log("🔓 AuthContext: Caricamento iniziale completato.");
         hasLoadedInitially.current = true;
         setLoading(false);
       }
     };
+
     initAuth();
 
-    // Ascoltatore dei cambiamenti (Login / Registrazione / Logout)
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        try {
-          // Nessun setLoading(true) qui! Evitiamo il re-render al cambio scheda.
-          setSession(session);
-          setUser(session?.user ?? null);
-          await fetchProfile(session?.user ?? null);
-        } catch (error) {
-          console.error("Errore authListener:", error);
-        } finally {
-          if (!hasLoadedInitially.current) {
-            hasLoadedInitially.current = true;
-            setLoading(false);
-          }
+      async (event, currentSession) => {
+        console.log("🔔 Auth State Change:", event);
+
+        setSession(currentSession);
+        const currentUser = currentSession?.user ?? null;
+        setUser(currentUser);
+
+        if (currentUser) {
+          await fetchProfile(currentUser);
+        } else {
+          setProfile(null);
         }
+
+        // Se per qualche motivo il loading è ancora true, sbloccalo
+        setLoading(false);
       },
     );
 
