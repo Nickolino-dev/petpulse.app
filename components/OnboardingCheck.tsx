@@ -17,47 +17,50 @@ export default function OnboardingCheck({
 
   useEffect(() => {
     const checkAccess = async () => {
-      // Se l'AuthContext sta ancora lavorando, restiamo in attesa
+      // 1. Se il context sta caricando, NON sbloccare nulla.
       if (loading) return;
 
-      // Se non c'è l'utente, aspettiamo che arrivi la sessione (non sblocchiamo ancora)
+      // 2. Se il caricamento è finito ma l'utente NON c'è
       if (!user) {
-        console.log("⏳ Onboarding: In attesa di utente/sessione...");
-        // Se dopo 3 secondi non c'è ancora nessuno, allora è davvero un ospite
-        const timer = setTimeout(() => {
-          if (!user) setIsLoading(false);
-        }, 3000);
-        return () => clearTimeout(timer);
+        // Se siamo in una pagina che richiede login, forziamo il redirect
+        // Se non hai ancora una pagina di login, per ora lo mandiamo a un ipotetico /login
+        // o semplicemente lo lasciamo nel caricamento finché non decide cosa fare
+        console.log(
+          "⚠️ Nessun utente trovato. Reindirizzamento o sblocco ospite...",
+        );
+        setIsLoading(false);
+        return;
       }
 
-      console.log("🔍 Onboarding: Utente trovato, controllo profilo...");
+      // 3. Se l'utente C'È, allora controlliamo il profilo
+      console.log("✅ Utente confermato:", user.id);
 
       try {
-        const { data: profile } = await supabase
+        const { data: profile, error } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", user.id)
           .single();
 
-        // Controllo se il profilo è quello di default o incompleto
+        if (error) {
+          console.error("Errore fetch profilo:", error);
+        }
+
         const isProfileIncomplete =
           !profile?.username ||
           !profile?.pet_name ||
-          profile?.pet_name === "Il mio Pet" ||
-          profile?.pet_name === "Nuovo Pet";
+          profile?.pet_name === "Il mio Pet";
 
         const isOnboardingPage = pathname === "/onboarding";
 
         if (isProfileIncomplete && !isOnboardingPage) {
           router.push("/onboarding");
-        } else if (!isProfileIncomplete && isOnboardingPage) {
-          router.push("/");
-          setIsLoading(false); // Sblocchiamo qui se siamo già a casa
         } else {
+          // Se tutto è ok, sblocchiamo l'interfaccia
           setIsLoading(false);
         }
       } catch (err) {
-        console.error("Errore check:", err);
+        console.error("Errore critico:", err);
         setIsLoading(false);
       }
     };
@@ -65,14 +68,16 @@ export default function OnboardingCheck({
     checkAccess();
   }, [user, loading, pathname, router]);
 
+  // Finché isLoading è vero, mostriamo lo spinner
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7]">
         <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse">
           🐾
         </div>
-        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse tracking-widest uppercase">
-          Caricamento profilo...
+        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse tracking-widest uppercase text-center px-4">
+          Sto controllando chi sei... <br />
+          <span className="text-[10px] font-normal">Un attimo di pazienza</span>
         </div>
       </div>
     );
