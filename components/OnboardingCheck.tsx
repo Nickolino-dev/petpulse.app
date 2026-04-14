@@ -13,30 +13,28 @@ export default function OnboardingCheck({
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [isVerifying, setIsVerifying] = useState(true);
+  const [status, setStatus] = useState<
+    "checking" | "authorized" | "redirecting"
+  >("checking");
 
   useEffect(() => {
-    const check = async () => {
-      // 1. CRITICO: Se AuthContext sta ancora caricando, non fare ASSOLUTAMENTE nulla.
-      // Aspettiamo che Supabase dica la sua.
-      if (loading) {
-        return;
-      }
+    // 1. Se l'AuthContext sta ancora caricando, non muovere un muscolo
+    if (loading) return;
 
-      // 2. Se loading è finito e NON c'è l'utente
+    const runCheck = async () => {
+      // 2. Se non c'è l'utente dopo il caricamento
       if (!user) {
         if (pathname !== "/auth") {
-          console.log("👋 Nessun utente, vai al login");
+          setStatus("redirecting");
           router.push("/auth");
         } else {
-          setIsVerifying(false);
+          setStatus("authorized");
         }
         return;
       }
 
-      // 3. Se c'è l'utente, controlliamo il profilo
+      // 3. Se c'è l'utente, verifichiamo il profilo nel DB
       try {
-        console.log("👤 Utente trovato, controllo profilo...");
         const { data: profile } = await supabase
           .from("profiles")
           .select("username, pet_name")
@@ -49,38 +47,45 @@ export default function OnboardingCheck({
           profile?.pet_name === "Il mio Pet";
 
         if (isProfileIncomplete && pathname !== "/onboarding") {
+          setStatus("redirecting");
           router.push("/onboarding");
         } else if (
           !isProfileIncomplete &&
           (pathname === "/onboarding" || pathname === "/auth")
         ) {
+          setStatus("redirecting");
           router.push("/");
         } else {
-          // Tutto ok, sblocchiamo la vista
-          setIsVerifying(false);
+          // TUTTO OK: Sblocca l'interfaccia
+          setStatus("authorized");
         }
       } catch (err) {
-        console.error("Errore profilo:", err);
-        setIsVerifying(false);
+        console.error("Errore check profilazione:", err);
+        setStatus("authorized"); // In caso di errore, meglio far entrare l'utente che bloccarlo
       }
     };
 
-    check();
+    runCheck();
   }, [user, loading, pathname, router]);
 
-  // Mostriamo lo spinner solo se stiamo effettivamente verificando o se l'auth è in corso
-  if (loading || isVerifying) {
+  // Se siamo in stato "checking" o l'auth sta ancora caricando, mostriamo lo spinner
+  if (loading || status === "checking" || status === "redirecting") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7]">
         <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse">
           🐾
         </div>
-        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse uppercase tracking-widest">
-          Riconoscendo l'odore...
+        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse uppercase tracking-widest text-center">
+          Verifica in corso...
+          <br />
+          <span className="text-[10px] lowercase font-normal opacity-50">
+            Stiamo sincronizzando la cuccia
+          </span>
         </div>
       </div>
     );
   }
 
+  // Solo se lo stato è "authorized" mostriamo il contenuto
   return <>{children}</>;
 }
