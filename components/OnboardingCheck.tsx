@@ -19,32 +19,52 @@ export default function OnboardingCheck({
 
   useEffect(() => {
     const checkAccess = async () => {
+      // DEBUG: Vediamo cosa succede all'inizio del controllo
+      console.log("🔍 DEBUG CHECK:", {
+        loading,
+        hasUser: !!user,
+        currentPath: pathname,
+      });
+
       // Effetto di Controllo: non facciamo nulla finché l'utente non è certo
-      if (loading || !user) return;
+      if (loading) return;
+
+      if (!user) {
+        console.log("⚠️ Nessun utente trovato, stop al controllo.");
+        return;
+      }
 
       // Fetch Profilo Silenzioso e Assoluto (aspetta Supabase)
-      const { data: profile } = await supabase
+      const { data: profile, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single();
 
-      console.log("Stato Profilo:", profile); // Debug: Controlliamo cosa arriva dal DB
+      // DEBUG: Questo è il log fondamentale per stasera
+      console.log("📄 RISULTATO DB PROFILO:", profile);
+      if (error) console.error("❌ ERRORE SUPABASE:", error);
 
       const isProfileIncomplete =
         !profile?.username ||
         !profile?.pet_name ||
         profile?.pet_name === "Il mio Pet" ||
         profile?.pet_name === "Nuovo Pet";
+
       const isOnboardingPage = pathname === "/onboarding";
+
+      console.log("🤔 STATUS:", { isProfileIncomplete, isOnboardingPage });
 
       // Redirect Sicuro: sostituiamo la rotta e NON sblocchiamo isLoading
       if (isProfileIncomplete && !isOnboardingPage) {
+        console.log("➡️ Redirect verso ONBOARDING");
         router.push("/onboarding");
       } else if (!isProfileIncomplete && isOnboardingPage) {
+        console.log("➡️ Profilo completo, redirect verso HOME");
         router.push("/");
       } else {
         // Profilo OK e pagina corretta: sblocca Navbar, Header e Feed!
+        console.log("✅ ACCESSO GARANTITO: Sblocco UI");
         setIsLoading(false);
       }
     };
@@ -54,6 +74,8 @@ export default function OnboardingCheck({
 
   // Protezione Rendering (non restituisce i "children" finché non siamo sicuri)
   if (isLoading) {
+    // Un log che si ripete finché siamo bloccati
+    console.log("⏳ UI ancora bloccata dallo spinner...");
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7]">
         <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse shadow-sm">
