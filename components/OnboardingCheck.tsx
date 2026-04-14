@@ -17,34 +17,34 @@ export default function OnboardingCheck({
 
   useEffect(() => {
     const checkAccess = async () => {
-      // 1. Se il context sta caricando, NON sbloccare nulla.
+      // 1. Aspettiamo che l'AuthContext finisca di capire chi sei
       if (loading) return;
 
-      // 2. Se il caricamento è finito ma l'utente NON c'è
+      // 2. SE NON C'È L'UTENTE
       if (!user) {
-        // Se siamo in una pagina che richiede login, forziamo il redirect
-        // Se non hai ancora una pagina di login, per ora lo mandiamo a un ipotetico /login
-        // o semplicemente lo lasciamo nel caricamento finché non decide cosa fare
+        // Se sei già sulla pagina di login o registrazione, ti lascio vedere la pagina
+        if (pathname === "/login" || pathname === "/register") {
+          setIsLoading(false);
+          return;
+        }
+
+        // SE NON SEI LOGGATO e provi a entrare nella Home, ti sbatto al Login
         console.log(
-          "⚠️ Nessun utente trovato. Reindirizzamento o sblocco ospite...",
+          "🚫 Accesso negato: Utente non loggato. Redirect al login...",
         );
-        setIsLoading(false);
+        router.push("/login"); // Assicurati di avere questa rotta!
         return;
       }
 
-      // 3. Se l'utente C'È, allora controlliamo il profilo
-      console.log("✅ Utente confermato:", user.id);
+      // 3. SE C'È L'UTENTE, controlliamo il profilo
+      console.log("✅ Utente rilevato:", user.id);
 
       try {
-        const { data: profile, error } = await supabase
+        const { data: profile } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", user.id)
           .single();
-
-        if (error) {
-          console.error("Errore fetch profilo:", error);
-        }
 
         const isProfileIncomplete =
           !profile?.username ||
@@ -54,13 +54,16 @@ export default function OnboardingCheck({
         const isOnboardingPage = pathname === "/onboarding";
 
         if (isProfileIncomplete && !isOnboardingPage) {
+          console.log("⚠️ Profilo incompleto, vai all'onboarding");
           router.push("/onboarding");
+        } else if (!isProfileIncomplete && isOnboardingPage) {
+          router.push("/");
         } else {
-          // Se tutto è ok, sblocchiamo l'interfaccia
+          // Tutto ok, entra pure
           setIsLoading(false);
         }
       } catch (err) {
-        console.error("Errore critico:", err);
+        console.error("Errore nel check:", err);
         setIsLoading(false);
       }
     };
@@ -68,16 +71,14 @@ export default function OnboardingCheck({
     checkAccess();
   }, [user, loading, pathname, router]);
 
-  // Finché isLoading è vero, mostriamo lo spinner
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7]">
         <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse">
           🐾
         </div>
-        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse tracking-widest uppercase text-center px-4">
-          Sto controllando chi sei... <br />
-          <span className="text-[10px] font-normal">Un attimo di pazienza</span>
+        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse uppercase tracking-widest">
+          Annusando le tracce...
         </div>
       </div>
     );
