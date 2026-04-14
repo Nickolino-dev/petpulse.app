@@ -17,28 +17,20 @@ export default function OnboardingCheck({
 
   useEffect(() => {
     const checkAccess = async () => {
-      // 1. Se il Context sta caricando (loading vero), non fare nulla.
+      // Se l'AuthContext sta ancora lavorando, restiamo in attesa
       if (loading) return;
 
-      // 2. Se il loading è FINITO ma non c'è l'utente
+      // Se non c'è l'utente, aspettiamo che arrivi la sessione (non sblocchiamo ancora)
       if (!user) {
-        // Se siamo già in una pagina pubblica (tipo login/registrazione), sblocchiamo lo spinner
-        if (pathname === "/login" || pathname === "/register") {
-          setIsLoading(false);
-          return;
-        }
-        // Altrimenti, diamo un piccolo margine (500ms) per la INITIAL_SESSION di Supabase
-        const timeout = setTimeout(() => {
-          if (!user) {
-            console.log("🚫 Utente non trovato dopo attesa, vado al login");
-            // router.push("/login"); // Scommenta questa riga se hai una pagina di login
-            setIsLoading(false); // Per ora sblocchiamo e basta per vedere cosa succede
-          }
-        }, 1000);
-        return () => clearTimeout(timeout);
+        console.log("⏳ Onboarding: In attesa di utente/sessione...");
+        // Se dopo 3 secondi non c'è ancora nessuno, allora è davvero un ospite
+        const timer = setTimeout(() => {
+          if (!user) setIsLoading(false);
+        }, 3000);
+        return () => clearTimeout(timer);
       }
 
-      console.log("🔍 Onboarding: Controllo profilo per", user.id);
+      console.log("🔍 Onboarding: Utente trovato, controllo profilo...");
 
       try {
         const { data: profile } = await supabase
@@ -47,10 +39,12 @@ export default function OnboardingCheck({
           .eq("id", user.id)
           .single();
 
+        // Controllo se il profilo è quello di default o incompleto
         const isProfileIncomplete =
           !profile?.username ||
           !profile?.pet_name ||
-          profile?.pet_name === "Il mio Pet";
+          profile?.pet_name === "Il mio Pet" ||
+          profile?.pet_name === "Nuovo Pet";
 
         const isOnboardingPage = pathname === "/onboarding";
 
@@ -58,8 +52,8 @@ export default function OnboardingCheck({
           router.push("/onboarding");
         } else if (!isProfileIncomplete && isOnboardingPage) {
           router.push("/");
+          setIsLoading(false); // Sblocchiamo qui se siamo già a casa
         } else {
-          console.log("✅ ACCESSO OK");
           setIsLoading(false);
         }
       } catch (err) {
@@ -78,7 +72,7 @@ export default function OnboardingCheck({
           🐾
         </div>
         <div className="text-[#2D4A3E] font-bold text-sm animate-pulse tracking-widest uppercase">
-          Verificando la cuccia...
+          Caricamento profilo...
         </div>
       </div>
     );
