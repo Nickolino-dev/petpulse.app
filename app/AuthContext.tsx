@@ -36,46 +36,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = async (currentUser: User | null) => {
     if (!currentUser) {
       setProfile(null);
-      return;
+      return null;
     }
     try {
+      console.log("📡 AuthContext: Recupero profilo per ID:", currentUser.id);
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", currentUser.id)
         .single();
 
-      if (error) throw error;
-      setProfile(data || null);
+      if (error && error.code !== "PGRST116") {
+        // PGRST116 è "nessuna riga trovata", normale se nuovo utente
+        console.error("❌ Errore DB Profilo:", error.message);
+      }
+
+      const profileData = data || null;
+      setProfile(profileData);
+      return profileData;
     } catch (error) {
       console.error("Errore fetchProfile:", error);
       setProfile(null);
+      return null;
     }
   };
 
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // 1. Otteniamo la sessione subito
+        console.log("🎬 AuthContext: Avvio inizializzazione...");
         const {
-          data: { session },
+          data: { session: initialSession },
         } = await supabase.auth.getSession();
 
-        setSession(session);
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
-
-        // 2. Se c'è un utente, iniziamo a caricare il profilo MA non blocchiamo l'app
-        if (currentUser) {
-          fetchProfile(currentUser);
+        if (initialSession) {
+          setSession(initialSession);
+          setUser(initialSession.user);
+          await fetchProfile(initialSession.user);
+        } else {
+          console.log("ℹ️ Nessuna sessione iniziale trovata.");
         }
       } catch (error) {
-        console.error("Errore inizializzazione Auth:", error);
+        console.error("❌ Errore inizializzazione Auth:", error);
       } finally {
-        // 3. Sblocchiamo SEMPRE il loading qui, per permettere all'app di partire
-        console.log("🔓 AuthContext: Caricamento iniziale completato.");
-        hasLoadedInitially.current = true;
+        console.log("🔓 AuthContext: Loading impostato a FALSE");
         setLoading(false);
+        hasLoadedInitially.current = true;
       }
     };
 
@@ -85,17 +91,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, currentSession) => {
         console.log("🔔 Auth State Change:", event);
 
-        setSession(currentSession);
-        const currentUser = currentSession?.user ?? null;
-        setUser(currentUser);
-
-        if (currentUser) {
-          await fetchProfile(currentUser);
-        } else {
+        // Gestiamo il caso di logout immediato
+        if (event === "SIGNED_OUT") {
+          setSession(null);
+          setUser(null);
           setProfile(null);
+          setLoading(false);
+          return;
         }
 
-        // Se per qualche motivo il loading è ancora true, sbloccalo
+        if (currentSession) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          await fetchProfile(currentSession.user);
+        }
+
+        // Se l'app era rimasta appesa, questo la sblocca
         setLoading(false);
       },
     );
