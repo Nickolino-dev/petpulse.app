@@ -13,29 +13,30 @@ export default function OnboardingCheck({
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isVerifying, setIsVerifying] = useState(true);
 
   useEffect(() => {
-    const checkAccess = async () => {
-      // 1. Aspettiamo che l'AuthContext capisca chi siamo
-      if (loading) return;
-
-      // 2. SE NON C'È L'UTENTE
-      if (!user) {
-        // Se siamo già nella pagina di autenticazione, sblocchiamo lo spinner e stop
-        if (pathname === "/auth") {
-          setIsLoading(false);
-          return;
-        }
-
-        // Se proviamo ad andare altrove senza essere loggati, via verso /auth
-        console.log("🚫 Utente non loggato, redirect a /auth");
-        router.push("/auth");
+    const check = async () => {
+      // 1. CRITICO: Se AuthContext sta ancora caricando, non fare ASSOLUTAMENTE nulla.
+      // Aspettiamo che Supabase dica la sua.
+      if (loading) {
         return;
       }
 
-      // 3. SE C'È L'UTENTE, controlliamo se ha finito l'onboarding
+      // 2. Se loading è finito e NON c'è l'utente
+      if (!user) {
+        if (pathname !== "/auth") {
+          console.log("👋 Nessun utente, vai al login");
+          router.push("/auth");
+        } else {
+          setIsVerifying(false);
+        }
+        return;
+      }
+
+      // 3. Se c'è l'utente, controlliamo il profilo
       try {
+        console.log("👤 Utente trovato, controllo profilo...");
         const { data: profile } = await supabase
           .from("profiles")
           .select("username, pet_name")
@@ -47,37 +48,35 @@ export default function OnboardingCheck({
           !profile?.pet_name ||
           profile?.pet_name === "Il mio Pet";
 
-        const isOnboardingPage = pathname === "/onboarding";
-
-        if (isProfileIncomplete && !isOnboardingPage) {
+        if (isProfileIncomplete && pathname !== "/onboarding") {
           router.push("/onboarding");
         } else if (
           !isProfileIncomplete &&
-          (isOnboardingPage || pathname === "/auth")
+          (pathname === "/onboarding" || pathname === "/auth")
         ) {
-          // Se il profilo è ok ma siamo su pagine di servizio, andiamo in Home
           router.push("/");
         } else {
-          // Tutto in regola, via lo spinner
-          setIsLoading(false);
+          // Tutto ok, sblocchiamo la vista
+          setIsVerifying(false);
         }
       } catch (err) {
-        console.error("Errore check:", err);
-        setIsLoading(false);
+        console.error("Errore profilo:", err);
+        setIsVerifying(false);
       }
     };
 
-    checkAccess();
+    check();
   }, [user, loading, pathname, router]);
 
-  if (isLoading) {
+  // Mostriamo lo spinner solo se stiamo effettivamente verificando o se l'auth è in corso
+  if (loading || isVerifying) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FDFBF7]">
         <div className="w-16 h-16 bg-[#E67E70]/10 border-2 border-[#E67E70] rounded-full flex items-center justify-center text-3xl mb-4 animate-pulse">
           🐾
         </div>
-        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse tracking-widest uppercase">
-          Verifica in corso...
+        <div className="text-[#2D4A3E] font-bold text-sm animate-pulse uppercase tracking-widest">
+          Riconoscendo l'odore...
         </div>
       </div>
     );
