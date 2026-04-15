@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import AddPost from "./AddPost";
 import { useAuth } from "../app/AuthContext";
 import { supabase } from "../lib/supabase";
+import { Home, Map, Bell, User } from "lucide-react"; // Importa le icone per un look pro
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -14,10 +15,8 @@ export default function Navbar() {
 
   useEffect(() => {
     if (!user) return;
-
     let isMounted = true;
 
-    // 1. Carica il conteggio iniziale
     const fetchUnreadCount = async () => {
       try {
         const { count, error } = await supabase
@@ -36,17 +35,12 @@ export default function Navbar() {
 
     fetchUnreadCount();
 
-    // 2. Configurazione Realtime in CATENA (Cruciale per evitare l'errore .on() after .subscribe())
-    // Puliamo eventuali residui prima di iniziare
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
     }
 
-    // Il timestamp garantisce che il canale sia SEMPRE unico, aggirando l'errore "after subscribe()"
     const channelName = `navbar-notif-${user.id}-${Date.now()}`;
-    console.log("Debug Realtime: Inizializzazione canale", channelName);
 
-    // Creiamo, configuriamo e sottoscriviamo in un unico blocco atomico
     const channel = supabase
       .channel(channelName)
       .on(
@@ -59,21 +53,14 @@ export default function Navbar() {
         },
         () => {
           if (isMounted) {
-            console.log("Debug Realtime: Notifica ricevuta!");
             setUnreadCount((prev) => prev + 1);
           }
         },
       )
-      .subscribe((status) => {
-        console.log("Debug Realtime: Stato connessione =", status);
-        if (status === "SUBSCRIBED") {
-          console.log("Debug Realtime: In ascolto di nuove notifiche!");
-        }
-      });
+      .subscribe();
 
     channelRef.current = channel;
 
-    // Cleanup: spegniamo tutto quando il componente "muore" o cambia utente
     return () => {
       isMounted = false;
       if (channelRef.current) {
@@ -81,9 +68,8 @@ export default function Navbar() {
         channelRef.current = null;
       }
     };
-  }, [user?.id]); // Usiamo l'ID come dipendenza sicura
+  }, [user?.id]);
 
-  // Reset del pallino quando entri nella pagina notifiche
   useEffect(() => {
     if (pathname === "/notifications") {
       setUnreadCount(0);
@@ -91,51 +77,54 @@ export default function Navbar() {
   }, [pathname]);
 
   const NavItem = ({ href, icon, label, badge }: any) => {
-    const isActive = href.startsWith("/profile")
-      ? pathname?.startsWith("/profile")
-      : pathname === href;
+    const isActive =
+      href === "/" ? pathname === "/" : pathname?.startsWith(href);
 
     return (
       <Link
         href={href}
-        className={`flex flex-col items-center gap-1 text-[10px] relative transition-all duration-300 ${
-          isActive
-            ? "text-[#2D4A3E] font-black scale-105"
-            : "text-gray-400 font-medium"
+        className={`flex flex-col items-center gap-1 relative transition-all duration-300 ${
+          isActive ? "text-[#E67E70]" : "text-gray-400"
         }`}
       >
-        <span className="text-xl">{icon}</span>
-        <span>{label}</span>
+        <div
+          className={`transition-transform duration-300 ${isActive ? "scale-110" : "scale-100"}`}
+        >
+          {icon}
+        </div>
+        <span className="text-[9px] font-black uppercase tracking-widest">
+          {label}
+        </span>
 
         {badge !== undefined && badge > 0 && (
-          <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-black flex items-center justify-center rounded-full border-2 border-[#FDFBF7] animate-pulse shadow-sm">
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#E67E70] text-white text-[9px] font-black flex items-center justify-center rounded-full border-2 border-[#FDFBF7] animate-pulse shadow-sm">
             {badge > 9 ? "9+" : badge}
           </div>
-        )}
-
-        {isActive && (
-          <div className="absolute -bottom-3 w-1 h-1 rounded-full bg-[#2D4A3E]"></div>
         )}
       </Link>
     );
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full h-20 bg-[#FDFBF7] border-t border-[#2D4A3E]/10 flex justify-around items-center px-2 z-50 shadow-[0_-2px_15px_rgba(0,0,0,0.05)]">
-      <NavItem href="/" icon="🏠" label="HOME" />
-      <NavItem href="/chat" icon="💬" label="CHAT" />
+    <nav className="fixed bottom-0 left-0 w-full h-20 bg-white border-t border-gray-100 flex justify-around items-center px-4 z-50 shadow-[0_-5px_20px_rgba(0,0,0,0.03)]">
+      <NavItem href="/" icon={<Home size={24} />} label="Home" />
 
-      <div className="relative -mt-8">
+      {/* Sostituita la Chat con la Mappa */}
+      <NavItem href="/map" icon={<Map size={24} />} label="Mappa" />
+
+      {/* Il tasto centrale AddPost rimane com'è perché è già perfetto */}
+      <div className="relative -mt-10">
         <AddPost />
       </div>
 
       <NavItem
         href="/notifications"
-        icon="🔔"
-        label="AVVISI"
+        icon={<Bell size={24} />}
+        label="Avvisi"
         badge={unreadCount}
       />
-      <NavItem href="/profile" icon="👤" label="PROFILO" />
+
+      <NavItem href="/profile" icon={<User size={24} />} label="Profilo" />
     </nav>
   );
 }
